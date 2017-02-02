@@ -1,3 +1,11 @@
+Note
+-----
+
+This is a netzkombinat.su fork and is not the stock mirror of GNU-social.
+
+
+
+
 # GNU social 1.2.x
 2015
 
