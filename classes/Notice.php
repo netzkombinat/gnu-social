@@ -313,6 +313,21 @@ class Notice extends Managed_DataObject
         }
     }
 
+    public function getSelfLink()
+    {
+        if ($this->isLocal()) {
+            return common_local_url('ApiStatusesShow', array('id' => $this->getID(), 'format' => 'atom'));
+        }
+
+        $selfLink = $this->getPref('ostatus', 'self');
+
+        if (!common_valid_http_url($selfLink)) {
+            throw new InvalidUrlException($selfLink);
+        }
+
+        return $selfLink;
+    }
+
     public function getObjectType($canonical=false) {
         if (is_null($this->object_type) || $this->object_type==='') {
             throw new NoObjectTypeException($this);
@@ -445,6 +460,7 @@ class Notice extends Managed_DataObject
     static function saveNew($profile_id, $content, $source, array $options=null) {
         $defaults = array('uri' => null,
                           'url' => null,
+                          'self' => null,
                           'conversation' => null,   // URI of conversation
                           'reply_to' => null,       // This will override convo URI if the parent is known
                           'repeat_of' => null,      // This will override convo URI if the repeated notice is known
@@ -717,6 +733,10 @@ class Notice extends Managed_DataObject
             }
         }
 
+        if ($self && common_valid_http_url($self)) {
+            $notice->setPref('ostatus', 'self', $self);
+        }
+
         // Only save 'attention' and metadata stuff (URLs, tags...) stuff if
         // the activityverb is a POST (since stuff like repeat, favorite etc.
         // reasonably handle notifications themselves.
@@ -776,6 +796,9 @@ class Notice extends Managed_DataObject
             // implied object
             $options['uri'] = $act->id;
             $options['url'] = $act->link;
+            if ($act->selfLink) {
+                $options['self'] = $act->selfLink;
+            }
         } else {
             $actobj = count($act->objects)===1 ? $act->objects[0] : null;
             if (!is_null($actobj) && !empty($actobj->id)) {
@@ -786,6 +809,9 @@ class Notice extends Managed_DataObject
                     $options['url'] = $actobj->id;
                 }
             }
+            if ($actobj->selfLink) {
+                $options['self'] = $actobj->selfLink;
+            }
         }
 
         $defaults = array(
@@ -795,6 +821,7 @@ class Notice extends Managed_DataObject
                           'reply_to' => null,
                           'repeat_of' => null,
                           'scope' => null,
+                          'self' => null,
                           'source' => 'unknown',
                           'tags' => array(),
                           'uri' => null,
@@ -997,6 +1024,10 @@ class Notice extends Managed_DataObject
         }
         if (!$stored instanceof Notice) {
             throw new ServerException('StartNoticeSave did not give back a Notice');
+        }
+
+        if ($self && common_valid_http_url($self)) {
+            $stored->setPref('ostatus', 'self', $self);
         }
 
         // Only save 'attention' and metadata stuff (URLs, tags...) stuff if
@@ -2048,9 +2079,12 @@ class Notice extends Managed_DataObject
                 }
             }
 
+            try {
+                $act->selfLink = $this->getSelfLink();
+            } catch (InvalidUrlException $e) {
+                $act->selfLink = null;
+            }
             if ($this->isLocal()) {
-                $act->selfLink = common_local_url('ApiStatusesShow', array('id' => $this->id,
-                                                                           'format' => 'atom'));
                 $act->editLink = $act->selfLink;
             }
 
@@ -2148,6 +2182,11 @@ class Notice extends Managed_DataObject
             $object->title   = sprintf('New %1$s by %2$s', ActivityObject::canonicalType($object->type), $this->getProfile()->getNickname());
             $object->content = $this->getRendered();
             $object->link    = $this->getUrl();
+            try {
+                $object->selfLink = $this->getSelfLink();
+            } catch (InvalidUrlException $e) {
+                $object->selfLink = null;
+            }
 
             $object->extra[] = array('status_net', array('notice_id' => $this->id));
 
@@ -3081,5 +3120,28 @@ class Notice extends Managed_DataObject
             print ".";
         }
         print "\n";
+    }
+
+    public function delPref($namespace, $topic) {
+        return Notice_prefs::setData($this, $namespace, $topic, null);
+    }
+
+    public function getPref($namespace, $topic, $default=null) {
+        // If you want an exception to be thrown, call Notice_prefs::getData directly
+        try {
+            return Notice_prefs::getData($this, $namespace, $topic, $default);
+        } catch (NoResultException $e) {
+            return null;
+        }
+    }
+
+    // The same as getPref but will fall back to common_config value for the same namespace/topic
+    public function getConfigPref($namespace, $topic)
+    {
+        return Notice_prefs::getConfigData($this, $namespace, $topic);
+    }
+
+    public function setPref($namespace, $topic, $data) {
+        return Notice_prefs::setData($this, $namespace, $topic, $data);
     }
 }

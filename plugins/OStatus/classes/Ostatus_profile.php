@@ -1561,24 +1561,28 @@ class Ostatus_profile extends Managed_DataObject
      */
     public static function ensureWebfinger($addr)
     {
-        // First, try the cache
+        // Normalize $addr, i.e. add 'acct:' if missing
+        $addr = Discovery::normalize($addr);
 
+        // Try the cache
         $uri = self::cacheGet(sprintf('ostatus_profile:webfinger:%s', $addr));
 
         if ($uri !== false) {
             if (is_null($uri)) {
                 // Negative cache entry
                 // TRANS: Exception.
-                throw new Exception(_m('Not a valid webfinger address.'));
+                throw new Exception(_m('Not a valid webfinger address (via cache).'));
             }
             $oprofile = Ostatus_profile::getKV('uri', $uri);
             if ($oprofile instanceof Ostatus_profile) {
                 return $oprofile;
             }
+            common_log(LOG_ERR, sprintf(__METHOD__ . ': Webfinger address cache inconsistent with database, did not find Ostatus_profile uri==%s', $uri));
+            self::cacheSet(sprintf('ostatus_profile:webfinger:%s', $addr), false);
         }
 
         // Try looking it up
-        $oprofile = Ostatus_profile::getKV('uri', Discovery::normalize($addr));
+        $oprofile = Ostatus_profile::getKV('uri', $addr);
 
         if ($oprofile instanceof Ostatus_profile) {
             self::cacheSet(sprintf('ostatus_profile:webfinger:%s', $addr), $oprofile->getUri());
